@@ -54,7 +54,7 @@ async def main() -> None:
     dp.message.middleware(DatabaseMiddleware(async_session_maker))
     dp.callback_query.middleware(DatabaseMiddleware(async_session_maker))
 
-    @dp.errors.register()
+    @dp.errors.register
     async def error_handler(update: Update, exception: Exception) -> bool:
         logger.exception("Update %s caused error %s", update, exception)
         return True
