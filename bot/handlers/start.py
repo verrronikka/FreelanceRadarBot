@@ -6,12 +6,49 @@ from aiogram.fsm.context import FSMContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
-from db.models import User, UserStatus, Profile, FilterRule, RuleType
-from bot.keyboards.main import get_main_menu_keyboard
+from db.models import (
+    User,
+    UserStatus,
+    Profile,
+    FilterRule,
+    RuleType,
+    Source,
+    SourceStatus,
+    ProfileSource,
+)
+from bot.keyboards.main import get_main_menu_keyboard, get_sources_keyboard
 from bot.states import ProfileSetup
 
 logger = logging.getLogger(__name__)
 router = Router()
+
+
+async def get_active_sources(session: AsyncSession):
+    result = await session.execute(
+        select(Source).where(Source.status == SourceStatus.active)
+    )
+    return result.scalars().all()
+
+
+async def show_source_selection(message: Message, state: FSMContext, session: AsyncSession):
+    sources = await get_active_sources(session)
+    if not sources:
+        await state.update_data(selected_sources=[])
+        await message.answer(
+            "⚠️ Сейчас нет доступных источников. Пропускаем этот шаг.\n\n"
+            "Шаг 3 из 5: Минимальный бюджет\n\n"
+            "Введи минимальную сумму в рублях, например: 20000\n"
+            "Или напиши \"пропустить\"."
+        )
+        await state.set_state(ProfileSetup.waiting_for_budget)
+        return
+    data = await state.get_data()
+    selected = data.get("selected_sources", [])
+    await message.answer(
+        "📡 Выбери источники для отслеживания (можно несколько):",
+        reply_markup=get_sources_keyboard(sources, selected)
+    )
+    await state.set_state(ProfileSetup.waiting_for_sources)
 
 
 @router.message(Command("start"))
@@ -35,23 +72,54 @@ async def cmd_start(message: Message, session: AsyncSession):
 @router.callback_query(F.data == "setup_profile")
 async def start_profile_setup(callback: CallbackQuery, state: FSMContext):
     await callback.message.edit_text(
-        "🎯 Настройка профиля\n\nШаг 1 из 4: Название профиля\n\nВведи название, например:\n• Дизайн лендингов\n• Python-разработка"
+        "🎯 Настройка профиля\n\nШаг 1 из 5: Название профиля\n\nВведи название, например:\n• Дизайн лендингов\n• Python-разработка"
     )
     await state.set_state(ProfileSetup.waiting_for_name)
     await callback.answer()
 
 
 @router.message(ProfileSetup.waiting_for_name)
-async def process_name(message: Message, state: FSMContext):
+async def process_name(message: Message, state: FSMContext, session: AsyncSession):
     name = message.text.strip()
     if len(name) < 2 or len(name) > 120:
         await message.answer("❌ Название должно быть от 2 до 120 символов. Попробуй ещё раз:")
         return
     await state.update_data(profile_name=name)
-    await message.answer(
-        "✅ Отлично!\n\nШаг 2 из 4: Минимальный бюджет\n\nВведи минимальную сумму в рублях, например: 20000\nИли напиши \"пропустить\"."
+    await show_source_selection(message, state, session)
+
+
+@router.callback_query(ProfileSetup.waiting_for_sources, F.data.startswith("toggle_source:"))
+async def toggle_source(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    source_id = int(callback.data.split(":")[1])
+    data = await state.get_data()
+    selected = data.get("selected_sources", [])
+    if source_id in selected:
+        selected.remove(source_id)
+    else:
+        selected.append(source_id)
+    await state.update_data(selected_sources=selected)
+    sources = await get_active_sources(session)
+    await callback.message.edit_reply_markup(
+        reply_markup=get_sources_keyboard(sources, selected)
+    )
+    await callback.answer()
+
+
+@router.callback_query(ProfileSetup.waiting_for_sources, F.data == "sources_done")
+async def sources_done(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+    data = await state.get_data()
+    selected = data.get("selected_sources", [])
+    if not selected:
+        await callback.answer("Выбери хотя бы один источник", show_alert=True)
+        return
+    await callback.message.edit_text(
+        f"✅ Источники: {len(selected)} выбрано\n\n"
+        "Шаг 3 из 5: Минимальный бюджет\n\n"
+        "Введи минимальную сумму в рублях, например: 20000\n"
+        "Или напиши \"пропустить\"."
     )
     await state.set_state(ProfileSetup.waiting_for_budget)
+    await callback.answer()
 
 
 @router.message(ProfileSetup.waiting_for_budget)
@@ -69,7 +137,11 @@ async def process_budget(message: Message, state: FSMContext):
             return
     await state.update_data(min_budget=budget)
     await message.answer(
-        f"✅ Минимальный бюджет: {budget:,} ₽\n\nШаг 3 из 4: Ключевые слова\n\nВведи ключевые слова через запятую, например:\nлендинг, tilda, дизайн, верстка\n\nМаксимум 20 слов."
+        f"✅ Минимальный бюджет: {budget:,} ₽\n\n"
+        "Шаг 4 из 5: Ключевые слова\n\n"
+        "Введи ключевые слова через запятую, например:\n"
+        "лендинг, tilda, дизайн, верстка\n\n"
+        "Максимум 20 слов."
     )
     await state.set_state(ProfileSetup.waiting_for_keywords)
 
@@ -90,13 +162,16 @@ async def process_keywords(message: Message, state: FSMContext):
             return
     await state.update_data(keywords=keywords)
     await message.answer(
-        f"✅ Ключевые слова: {', '.join(keywords)}\n\nШаг 4 из 4: Описание для ИИ (опционально)\n\nКратко опиши, какие заказы ищешь, или напиши \"пропустить\".\nМаксимум 1500 символов."
+        f"✅ Ключевые слова: {', '.join(keywords)}\n\n"
+        "Шаг 5 из 5: Описание для ИИ (опционально)\n\n"
+        "Кратко опиши, какие заказы ищешь, или напиши \"пропустить\".\n"
+        "Максимум 1500 символов."
     )
     await state.set_state(ProfileSetup.waiting_for_ai_prompt)
 
 
 @router.message(ProfileSetup.waiting_for_ai_prompt)
-async def process_ai_prompt(message: Message, state: FSMContext):
+async def process_ai_prompt(message: Message, state: FSMContext, session: AsyncSession):
     text = message.text.strip()
     if text.lower() in ["пропустить", "skip"]:
         ai_prompt = None
@@ -109,9 +184,19 @@ async def process_ai_prompt(message: Message, state: FSMContext):
         ai_enabled = True
     await state.update_data(ai_prompt=ai_prompt, ai_enabled=ai_enabled)
     data = await state.get_data()
+
+    source_ids = data.get("selected_sources", [])
+    source_names = []
+    if source_ids:
+        result = await session.execute(
+            select(Source).where(Source.id.in_(source_ids))
+        )
+        source_names = [s.name for s in result.scalars().all()]
+
     summary = (
         "📋 Сводка профиля\n\n"
         f"Название: {data['profile_name']}\n"
+        f"Источники: {', '.join(source_names) if source_names else 'не выбраны'}\n"
         f"Минимальный бюджет: {data['min_budget']:,} ₽\n"
         f"Ключевые слова: {', '.join(data['keywords'])}\n"
         f"ИИ-фильтр: {'включён' if data['ai_enabled'] else 'выключен'}\n"
@@ -140,6 +225,8 @@ async def confirm_profile(callback: CallbackQuery, state: FSMContext, session: A
     )
     session.add(profile)
     await session.flush()
+    for source_id in data.get("selected_sources", []):
+        session.add(ProfileSource(profile_id=profile.id, source_id=source_id))
     for keyword in data["keywords"]:
         rule = FilterRule(
             profile_id=profile.id,
@@ -160,4 +247,48 @@ async def confirm_profile(callback: CallbackQuery, state: FSMContext, session: A
 async def cancel_setup(callback: CallbackQuery, state: FSMContext):
     await state.clear()
     await callback.message.edit_text("❌ Настройка отменена.")
+    await callback.answer()
+
+
+@router.callback_query(F.data == "my_sources")
+async def my_sources(callback: CallbackQuery, session: AsyncSession):
+    result = await session.execute(
+        select(User).where(User.telegram_user_id == callback.from_user.id)
+    )
+    user = result.scalar_one_or_none()
+    if not user:
+        await callback.message.answer("Сначала запустите /start")
+        await callback.answer()
+        return
+    profiles = await session.execute(
+        select(Profile).where(Profile.user_id == user.id)
+    )
+    profiles = profiles.scalars().all()
+    if not profiles:
+        await callback.message.answer("У вас пока нет профилей. Настройте профиль.")
+        await callback.answer()
+        return
+    lines = []
+    for profile in profiles:
+        sources = await session.execute(
+            select(Source).join(ProfileSource).where(ProfileSource.profile_id == profile.id)
+        )
+        sources = sources.scalars().all()
+        source_names = ", ".join(s.name for s in sources) if sources else "не выбраны"
+        lines.append(f"• {profile.name}: {source_names}")
+    await callback.message.answer("📡 Мои источники:\n\n" + "\n".join(lines))
+    await callback.answer()
+
+
+@router.callback_query(F.data == "recent_jobs")
+async def recent_jobs(callback: CallbackQuery, session: AsyncSession):
+    await callback.message.answer(
+        "📋 Последние подборки скоро появятся. Сначала настройте профиль и дождитесь новых заказов."
+    )
+    await callback.answer()
+
+
+@router.callback_query(F.data == "toggle_pause")
+async def toggle_pause(callback: CallbackQuery, session: AsyncSession):
+    await callback.message.answer("⏸ Функция паузы пока в разработке.")
     await callback.answer()

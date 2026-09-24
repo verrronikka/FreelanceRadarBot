@@ -9,3 +9,17 @@ def get_main_menu_keyboard() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(text="⏸ Пауза уведомлений", callback_data="toggle_pause")],
     ]
     return InlineKeyboardMarkup(inline_keyboard=keyboard)
+
+
+def get_sources_keyboard(sources, selected_ids):
+    buttons = []
+    for source in sources:
+        mark = "✅" if source.id in selected_ids else "⬜"
+        buttons.append([
+            InlineKeyboardButton(
+                text=f"{mark} {source.name}",
+                callback_data=f"toggle_source:{source.id}"
+            )
+        ])
+    buttons.append([InlineKeyboardButton(text="Готово", callback_data="sources_done")])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
