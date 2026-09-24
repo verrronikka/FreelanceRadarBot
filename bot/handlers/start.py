@@ -55,20 +55,29 @@ async def show_source_selection(message: Message, state: FSMContext, session: As
 
 @router.message(Command("start"))
 async def cmd_start(message: Message, session: AsyncSession) -> None:
-    telegram_user_id = message.from_user.id
-    result = await session.execute(
-        select(User).where(User.telegram_user_id == telegram_user_id)
-    )
-    user = result.scalar_one_or_none()
-    if not user:
-        user = User(telegram_user_id=telegram_user_id, status=UserStatus.active)
-        session.add(user)
-        await session.commit()
-        logger.info(f"Created new user: {telegram_user_id}")
-    await message.answer(
-        "👋 Привет! Я FreelanceRadar — бот для мониторинга заказов.\n\nВыбери действие:",
-        reply_markup=get_main_menu_keyboard()
-    )
+    try:
+        telegram_user_id = message.from_user.id
+        result = await session.execute(
+            select(User).where(User.telegram_user_id == telegram_user_id)
+        )
+        user = result.scalar_one_or_none()
+        if not user:
+            user = User(telegram_user_id=telegram_user_id, status=UserStatus.active)
+            session.add(user)
+            await session.commit()
+            logger.info(f"Created new user: {telegram_user_id}")
+        await message.answer(
+            "👋 Привет! Я FreelanceRadar — бот для мониторинга заказов.\n\nВыбери действие:",
+            reply_markup=get_main_menu_keyboard()
+        )
+    except Exception as e:
+        logger.exception("Error in /start: %s", e)
+        await message.answer("⚠️ Произошла ошибка. Попробуйте позже.")
+
+
+@router.message(Command("ping"))
+async def cmd_ping(message: Message) -> None:
+    await message.answer("pong")
 
 
 @router.callback_query(F.data == "setup_profile")

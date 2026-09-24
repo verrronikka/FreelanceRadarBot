@@ -11,6 +11,8 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from core.config import settings
 from bot.handlers import start
+from db.base import Base
+import db.models  # noqa: F401  # ensure models are registered
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s")
 logger = logging.getLogger(__name__)
@@ -32,6 +34,14 @@ class DatabaseMiddleware(BaseMiddleware):
             return await handler(event, data)
 
 
+async def on_startup() -> None:
+    engine = create_async_engine(settings.database_url, echo=False)
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    await engine.dispose()
+    logger.info("Database tables are ready")
+
+
 async def main() -> None:
     bot = Bot(token=settings.telegram_bot_token)
     storage = MemoryStorage()
@@ -44,6 +54,12 @@ async def main() -> None:
     dp.message.middleware(DatabaseMiddleware(async_session_maker))
     dp.callback_query.middleware(DatabaseMiddleware(async_session_maker))
 
+    @dp.errors.register()
+    async def error_handler(update: Update, exception: Exception) -> bool:
+        logger.exception("Update %s caused error %s", update, exception)
+        return True
+
+    await on_startup()
     logger.info("Starting bot...")
     await dp.start_polling(bot)
 
