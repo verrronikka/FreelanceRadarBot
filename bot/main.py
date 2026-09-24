@@ -64,6 +64,18 @@ async def main() -> None:
         return True
 
     await on_startup()
+
+    # Проверяем доступность Telegram API до запуска поллинга
+    try:
+        me = await bot.get_me(request_timeout=10)
+        logger.info("Bot connected as @%s", me.username)
+    except Exception as e:
+        logger.error("Не удалось подключиться к Telegram API: %s", e)
+        logger.error(
+            "Проверьте доступ к api.telegram.org или настройте TELEGRAM_PROXY_URL в .env"
+        )
+        return
+
     logger.info("Starting bot...")
     try:
         await dp.start_polling(bot)
