@@ -74,6 +74,7 @@ async def main() -> None:
         logger.error(
             "Проверьте доступ к api.telegram.org или настройте TELEGRAM_PROXY_URL в .env"
         )
+        await bot.session.close()
         return
 
     logger.info("Starting bot...")
@@ -85,6 +86,8 @@ async def main() -> None:
             "Если ошибка связана с подключением к api.telegram.org, "
             "проверьте доступ к интернету или настройте TELEGRAM_PROXY_URL в .env"
         )
+    finally:
+        await bot.session.close()
 
 
 if __name__ == "__main__":

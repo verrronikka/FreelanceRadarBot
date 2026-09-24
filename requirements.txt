@@ -1,5 +1,6 @@
 # Bot
 aiogram==3.12.0
+aiohttp-socks==0.9.5
 
 # DB & ORM
 sqlalchemy[asyncio]==2.0.35
