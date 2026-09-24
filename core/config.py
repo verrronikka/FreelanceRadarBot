@@ -4,7 +4,6 @@ import os
 from pathlib import Path
 from dotenv import load_dotenv
 
-# Загружаем .env из корня проекта
 env_path = Path(__file__).parent.parent / ".env"
 load_dotenv(env_path)
 
@@ -13,6 +12,7 @@ class Settings:
     def __init__(self) -> None:
         # Telegram
         self.telegram_bot_token: str = os.getenv("TELEGRAM_BOT_TOKEN", "")
+        self.telegram_proxy_url: str | None = os.getenv("TELEGRAM_PROXY_URL") or None
 
         # Database & Cache
         self.database_url: str = os.getenv(

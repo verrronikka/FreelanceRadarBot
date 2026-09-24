@@ -43,7 +43,11 @@ async def on_startup() -> None:
 
 
 async def main() -> None:
-    bot = Bot(token=settings.telegram_bot_token)
+    if not settings.telegram_bot_token:
+        logger.error("TELEGRAM_BOT_TOKEN не задан. Проверьте .env файл.")
+        return
+
+    bot = Bot(token=settings.telegram_bot_token, proxy=settings.telegram_proxy_url)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     dp.include_router(start.router)
@@ -61,7 +65,14 @@ async def main() -> None:
 
     await on_startup()
     logger.info("Starting bot...")
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logger.exception("Bot stopped due to error: %s", e)
+        logger.error(
+            "Если ошибка связана с подключением к api.telegram.org, "
+            "проверьте доступ к интернету или настройте TELEGRAM_PROXY_URL в .env"
+        )
 
 
 if __name__ == "__main__":
