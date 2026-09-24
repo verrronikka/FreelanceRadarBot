@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import enum
 import uuid
 from datetime import datetime
@@ -107,14 +109,10 @@ class Job(TimestampMixin, Base):
     budget_min: Mapped[int | None] = mapped_column(Integer, nullable=True)
     budget_max: Mapped[int | None] = mapped_column(Integer, nullable=True)
     currency: Mapped[str] = mapped_column(String(8), default="RUB", nullable=False)
-    published_at: Mapped["datetime | None"] = mapped_column(DateTime(timezone=True), nullable=True)
+    published_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     raw_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
 
     source: Mapped["Source"] = relationship(back_populates="jobs")
-
-
-# импорт datetime для Optional type hint выше
-from datetime import datetime
 
 
 class FilterRule(Base):
@@ -152,5 +150,5 @@ class NotificationDelivery(TimestampMixin, Base):
     )
     status: Mapped[DeliveryStatus] = mapped_column(Enum(DeliveryStatus), default=DeliveryStatus.pending, nullable=False)
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
-    sent_at: Mapped["datetime | None"] = mapped_column(DateTime(timezone=True), nullable=True)
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)

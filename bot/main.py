@@ -1,9 +1,13 @@
+from __future__ import annotations
+
 import asyncio
 import logging
+from typing import Any
+
 from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Update
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.config import settings
 from bot.handlers import start
@@ -13,17 +17,22 @@ logger = logging.getLogger(__name__)
 
 
 class DatabaseMiddleware(BaseMiddleware):
-    def __init__(self, session_maker):
+    def __init__(self, session_maker: async_sessionmaker[AsyncSession]) -> None:
         self.session_maker = session_maker
         super().__init__()
 
-    async def __call__(self, handler, event: Update, data: dict):
+    async def __call__(
+        self,
+        handler: Any,
+        event: Update,
+        data: dict[str, Any],
+    ) -> Any:
         async with self.session_maker() as session:
             data["session"] = session
             return await handler(event, data)
 
 
-async def main():
+async def main() -> None:
     bot = Bot(token=settings.telegram_bot_token)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)

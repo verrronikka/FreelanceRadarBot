@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import logging
 from aiogram import Router, F
 from aiogram.filters import Command
@@ -16,21 +18,21 @@ from db.models import (
     SourceStatus,
     ProfileSource,
 )
-from bot.keyboards.main import get_main_menu_keyboard, get_sources_keyboard
+from bot.keyboards.main import get_main_menu_keyboard, get_sources_keyboard, get_confirmation_keyboard
 from bot.states import ProfileSetup
 
 logger = logging.getLogger(__name__)
 router = Router()
 
 
-async def get_active_sources(session: AsyncSession):
+async def get_active_sources(session: AsyncSession) -> list[Source]:
     result = await session.execute(
         select(Source).where(Source.status == SourceStatus.active)
     )
-    return result.scalars().all()
+    return list(result.scalars().all())
 
 
-async def show_source_selection(message: Message, state: FSMContext, session: AsyncSession):
+async def show_source_selection(message: Message, state: FSMContext, session: AsyncSession) -> None:
     sources = await get_active_sources(session)
     if not sources:
         await state.update_data(selected_sources=[])
@@ -52,7 +54,7 @@ async def show_source_selection(message: Message, state: FSMContext, session: As
 
 
 @router.message(Command("start"))
-async def cmd_start(message: Message, session: AsyncSession):
+async def cmd_start(message: Message, session: AsyncSession) -> None:
     telegram_user_id = message.from_user.id
     result = await session.execute(
         select(User).where(User.telegram_user_id == telegram_user_id)
@@ -70,7 +72,7 @@ async def cmd_start(message: Message, session: AsyncSession):
 
 
 @router.callback_query(F.data == "setup_profile")
-async def start_profile_setup(callback: CallbackQuery, state: FSMContext):
+async def start_profile_setup(callback: CallbackQuery, state: FSMContext) -> None:
     await callback.message.edit_text(
         "🎯 Настройка профиля\n\nШаг 1 из 5: Название профиля\n\nВведи название, например:\n• Дизайн лендингов\n• Python-разработка"
     )
@@ -79,7 +81,7 @@ async def start_profile_setup(callback: CallbackQuery, state: FSMContext):
 
 
 @router.message(ProfileSetup.waiting_for_name)
-async def process_name(message: Message, state: FSMContext, session: AsyncSession):
+async def process_name(message: Message, state: FSMContext, session: AsyncSession) -> None:
     name = message.text.strip()
     if len(name) < 2 or len(name) > 120:
         await message.answer("❌ Название должно быть от 2 до 120 символов. Попробуй ещё раз:")
@@ -89,7 +91,7 @@ async def process_name(message: Message, state: FSMContext, session: AsyncSessio
 
 
 @router.callback_query(ProfileSetup.waiting_for_sources, F.data.startswith("toggle_source:"))
-async def toggle_source(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+async def toggle_source(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     source_id = int(callback.data.split(":")[1])
     data = await state.get_data()
     selected = data.get("selected_sources", [])
@@ -106,7 +108,7 @@ async def toggle_source(callback: CallbackQuery, state: FSMContext, session: Asy
 
 
 @router.callback_query(ProfileSetup.waiting_for_sources, F.data == "sources_done")
-async def sources_done(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+async def sources_done(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     data = await state.get_data()
     selected = data.get("selected_sources", [])
     if not selected:
@@ -123,7 +125,7 @@ async def sources_done(callback: CallbackQuery, state: FSMContext, session: Asyn
 
 
 @router.message(ProfileSetup.waiting_for_budget)
-async def process_budget(message: Message, state: FSMContext):
+async def process_budget(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
     if text.lower() in ["пропустить", "skip"]:
         budget = 0
@@ -147,7 +149,7 @@ async def process_budget(message: Message, state: FSMContext):
 
 
 @router.message(ProfileSetup.waiting_for_keywords)
-async def process_keywords(message: Message, state: FSMContext):
+async def process_keywords(message: Message, state: FSMContext) -> None:
     text = message.text.strip()
     keywords = [kw.strip().lower() for kw in text.split(",") if kw.strip()]
     if len(keywords) == 0:
@@ -171,7 +173,7 @@ async def process_keywords(message: Message, state: FSMContext):
 
 
 @router.message(ProfileSetup.waiting_for_ai_prompt)
-async def process_ai_prompt(message: Message, state: FSMContext, session: AsyncSession):
+async def process_ai_prompt(message: Message, state: FSMContext, session: AsyncSession) -> None:
     text = message.text.strip()
     if text.lower() in ["пропустить", "skip"]:
         ai_prompt = None
@@ -204,12 +206,12 @@ async def process_ai_prompt(message: Message, state: FSMContext, session: AsyncS
     if data["ai_prompt"]:
         summary += f"\nОписание для ИИ:\n{data['ai_prompt']}\n"
     summary += "\nВсё верно?"
-    await message.answer(summary)
+    await message.answer(summary, reply_markup=get_confirmation_keyboard())
     await state.set_state(ProfileSetup.confirmation)
 
 
 @router.callback_query(ProfileSetup.confirmation, F.data == "confirm_profile")
-async def confirm_profile(callback: CallbackQuery, state: FSMContext, session: AsyncSession):
+async def confirm_profile(callback: CallbackQuery, state: FSMContext, session: AsyncSession) -> None:
     data = await state.get_data()
     result = await session.execute(
         select(User).where(User.telegram_user_id == callback.from_user.id)
@@ -244,14 +246,14 @@ async def confirm_profile(callback: CallbackQuery, state: FSMContext, session: A
 
 
 @router.callback_query(F.data == "cancel_setup")
-async def cancel_setup(callback: CallbackQuery, state: FSMContext):
+async def cancel_setup(callback: CallbackQuery, state: FSMContext) -> None:
     await state.clear()
     await callback.message.edit_text("❌ Настройка отменена.")
     await callback.answer()
 
 
 @router.callback_query(F.data == "my_sources")
-async def my_sources(callback: CallbackQuery, session: AsyncSession):
+async def my_sources(callback: CallbackQuery, session: AsyncSession) -> None:
     result = await session.execute(
         select(User).where(User.telegram_user_id == callback.from_user.id)
     )
@@ -281,7 +283,7 @@ async def my_sources(callback: CallbackQuery, session: AsyncSession):
 
 
 @router.callback_query(F.data == "recent_jobs")
-async def recent_jobs(callback: CallbackQuery, session: AsyncSession):
+async def recent_jobs(callback: CallbackQuery, session: AsyncSession) -> None:
     await callback.message.answer(
         "📋 Последние подборки скоро появятся. Сначала настройте профиль и дождитесь новых заказов."
     )
@@ -289,6 +291,6 @@ async def recent_jobs(callback: CallbackQuery, session: AsyncSession):
 
 
 @router.callback_query(F.data == "toggle_pause")
-async def toggle_pause(callback: CallbackQuery, session: AsyncSession):
+async def toggle_pause(callback: CallbackQuery, session: AsyncSession) -> None:
     await callback.message.answer("⏸ Функция паузы пока в разработке.")
     await callback.answer()

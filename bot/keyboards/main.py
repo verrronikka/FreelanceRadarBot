@@ -23,3 +23,11 @@ def get_sources_keyboard(sources, selected_ids):
         ])
     buttons.append([InlineKeyboardButton(text="Готово", callback_data="sources_done")])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def get_confirmation_keyboard() -> InlineKeyboardMarkup:
+    keyboard = [
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm_profile")],
+        [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_setup")],
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=keyboard)
