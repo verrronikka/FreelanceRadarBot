@@ -64,7 +64,16 @@ async def main() -> None:
         logger.exception("Update %s caused error %s", update, exception)
         return True
 
-    await on_startup()
+    try:
+        await on_startup()
+    except Exception as e:
+        logger.error("Не удалось подключиться к базе данных: %s", e)
+        logger.error(
+            "Проверьте, что PostgreSQL запущен и доступен по адресу %s",
+            settings.database_url,
+        )
+        await bot.session.close()
+        return
 
     # Проверяем доступность Telegram API до запуска поллинга
     try:
