@@ -40,19 +40,11 @@ class DatabaseMiddleware(BaseMiddleware):
 
 
 class ProxyAiohttpSession(AiohttpSession):
-    """AiohttpSession, который создаёт aiohttp.ClientSession с SOCKS5 прокси."""
+    """AiohttpSession, который использует заранее созданную aiohttp.ClientSession с SOCKS5 прокси."""
 
-    def __init__(self, proxy: str | None = None, **kwargs: Any) -> None:
+    def __init__(self, aiohttp_session: aiohttp.ClientSession, **kwargs: Any) -> None:
         super().__init__(**kwargs)
-        self._proxy = proxy
-        self._connector = None
-        if proxy:
-            self._connector = SocksProxyConnector.from_url(proxy)
-
-    async def _create_session(self) -> aiohttp.ClientSession:
-        if self._connector:
-            return aiohttp.ClientSession(connector=self._connector)
-        return await super()._create_session()
+        self._session = aiohttp_session
 
 
 async def on_startup() -> None:
@@ -110,7 +102,9 @@ async def main() -> None:
     if proxy_url:
         logger.info("Используем прокси для Telegram API: %s", proxy_url)
         try:
-            session = ProxyAiohttpSession(proxy=proxy_url)
+            connector = SocksProxyConnector.from_url(proxy_url)
+            aiohttp_session = aiohttp.ClientSession(connector=connector)
+            session = ProxyAiohttpSession(aiohttp_session=aiohttp_session)
         except Exception as e:
             logger.exception("Не удалось создать сессию с прокси %s: %s", proxy_url, e)
             return
