@@ -43,10 +43,44 @@ async def on_startup() -> None:
     logger.info("Database tables are ready")
 
 
+def find_working_proxy() -> str | None:
+    """Пытается найти локальный прокси, через который доступен api.telegram.org."""
+    try:
+        import requests
+    except ImportError:
+        logger.warning("requests не установлен, пропускаем автоопределение прокси")
+        return None
+
+    ports = [1080, 7890, 8080, 3128]
+    protocols = ["socks5", "http"]
+    target = "https://api.telegram.org"
+
+    for port in ports:
+        for proto in protocols:
+            proxy_url = f"{proto}://127.0.0.1:{port}"
+            proxies = {"http": proxy_url, "https": proxy_url}
+            try:
+                resp = requests.get(target, proxies=proxies, timeout=3)
+                if resp.status_code < 500:
+                    return proxy_url
+            except Exception:
+                continue
+    return None
+
+
 async def main() -> None:
     if not settings.telegram_bot_token:
         logger.error("TELEGRAM_BOT_TOKEN не задан. Проверьте .env файл.")
         return
+
+    # Если прокси не задан вручную, пробуем найти рабочий локальный прокси
+    if not settings.telegram_proxy_url:
+        proxy = find_working_proxy()
+        if proxy:
+            settings.telegram_proxy_url = proxy
+            logger.info("Автоопределён прокси: %s", proxy)
+        else:
+            logger.warning("Не удалось найти рабочий локальный прокси. Пробуем прямое подключение.")
 
     bot = Bot(token=settings.telegram_bot_token, proxy=settings.telegram_proxy_url)
     storage = MemoryStorage()
@@ -84,6 +118,8 @@ async def main() -> None:
         logger.error(
             "Проверьте доступ к api.telegram.org или настройте TELEGRAM_PROXY_URL в .env"
         )
+        if settings.telegram_proxy_url:
+            logger.error("Используемый прокси: %s", settings.telegram_proxy_url)
         await bot.session.close()
         return
 
