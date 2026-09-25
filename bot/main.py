@@ -38,6 +38,19 @@ class DatabaseMiddleware(BaseMiddleware):
             return await handler(event, data)
 
 
+class ProxyAiohttpSession(AiohttpSession):
+    """AiohttpSession, который передаёт proxy в каждый запрос к Telegram API."""
+
+    def __init__(self, proxy: str | None = None, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._proxy = proxy
+
+    async def _request(self, method: str, url: str, **kwargs: Any) -> Any:
+        if self._proxy:
+            kwargs["proxy"] = self._proxy
+        return await super()._request(method, url, **kwargs)
+
+
 async def on_startup() -> None:
     engine = create_async_engine(settings.database_url, echo=False)
     async with engine.begin() as conn:
@@ -93,8 +106,7 @@ async def main() -> None:
     if proxy_url:
         logger.info("Используем прокси для Telegram API: %s", proxy_url)
         try:
-            aiohttp_session = aiohttp.ClientSession(proxy=proxy_url)
-            session = AiohttpSession(session=aiohttp_session)
+            session = ProxyAiohttpSession(proxy=proxy_url)
         except Exception as e:
             logger.exception("Не удалось создать сессию с прокси %s: %s", proxy_url, e)
             return
