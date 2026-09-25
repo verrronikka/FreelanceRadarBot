@@ -4,7 +4,9 @@ import asyncio
 import logging
 from typing import Any
 
+import aiohttp
 from aiogram import Bot, Dispatcher, BaseMiddleware
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Update
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -33,6 +35,19 @@ class DatabaseMiddleware(BaseMiddleware):
         async with self.session_maker() as session:
             data["session"] = session
             return await handler(event, data)
+
+
+class ProxyAiohttpSession(AiohttpSession):
+    """AiohttpSession, который создаёт aiohttp.ClientSession с proxy."""
+
+    def __init__(self, proxy: str | None = None, **kwargs: Any) -> None:
+        super().__init__(**kwargs)
+        self._proxy = proxy
+
+    async def _create_session(self) -> aiohttp.ClientSession:
+        if self._proxy:
+            return aiohttp.ClientSession(proxy=self._proxy)
+        return await super()._create_session()
 
 
 async def on_startup() -> None:
@@ -82,7 +97,14 @@ async def main() -> None:
         else:
             logger.warning("Не удалось найти рабочий локальный прокси. Пробуем прямое подключение.")
 
-    bot = Bot(token=settings.telegram_bot_token, proxy=settings.telegram_proxy_url)
+    # Создаём сессию для Telegram API
+    if settings.telegram_proxy_url:
+        session = ProxyAiohttpSession(proxy=settings.telegram_proxy_url)
+        logger.info("Используем прокси для Telegram API: %s", settings.telegram_proxy_url)
+    else:
+        session = AiohttpSession()
+
+    bot = Bot(token=settings.telegram_bot_token, session=session)
     storage = MemoryStorage()
     dp = Dispatcher(storage=storage)
     dp.include_router(start.router)
