@@ -11,6 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 
 from core.config import settings
 from bot.handlers import start
+from bot.scheduler import Scheduler
 from db.base import Base
 import db.models  # noqa: F401  # ensure models are registered
 
@@ -77,6 +78,9 @@ async def main() -> None:
         await bot.session.close()
         return
 
+    scheduler = Scheduler(async_session_maker, settings.poll_interval_seconds)
+    scheduler_task = asyncio.create_task(scheduler.run())
+
     logger.info("Starting bot...")
     try:
         await dp.start_polling(bot)
@@ -87,6 +91,7 @@ async def main() -> None:
             "проверьте доступ к интернету или настройте TELEGRAM_PROXY_URL в .env"
         )
     finally:
+        scheduler_task.cancel()
         await bot.session.close()
 
 
