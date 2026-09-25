@@ -10,7 +10,7 @@ from aiogram import Bot, Dispatcher, BaseMiddleware
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.fsm.storage.memory import MemoryStorage
 from aiogram.types import Update
-from aiohttp_socks import SocksProxyConnector
+from aiohttp_socks import ProxyConnector
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from core.config import settings
@@ -40,7 +40,7 @@ class DatabaseMiddleware(BaseMiddleware):
 
 
 class ProxyAiohttpSession(AiohttpSession):
-    """AiohttpSession, который использует заранее созданную aiohttp.ClientSession с SOCKS5 прокси."""
+    """AiohttpSession, который использует заранее созданную aiohttp.ClientSession с прокси."""
 
     def __init__(self, aiohttp_session: aiohttp.ClientSession, **kwargs: Any) -> None:
         super().__init__(**kwargs)
@@ -102,7 +102,7 @@ async def main() -> None:
     if proxy_url:
         logger.info("Используем прокси для Telegram API: %s", proxy_url)
         try:
-            connector = SocksProxyConnector.from_url(proxy_url)
+            connector = ProxyConnector.from_url(proxy_url)
             aiohttp_session = aiohttp.ClientSession(connector=connector)
             session = ProxyAiohttpSession(aiohttp_session=aiohttp_session)
         except Exception as e:
