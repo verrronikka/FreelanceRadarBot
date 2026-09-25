@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 from typing import Any
 
 import aiohttp
@@ -88,19 +89,23 @@ async def main() -> None:
         logger.error("TELEGRAM_BOT_TOKEN не задан. Проверьте .env файл.")
         return
 
+    # Явно читаем прокси из окружения
+    proxy_url = os.getenv("TELEGRAM_PROXY_URL") or None
+    logger.info("TELEGRAM_PROXY_URL = %s", proxy_url)
+
     # Если прокси не задан вручную, пробуем найти рабочий локальный прокси
-    if not settings.telegram_proxy_url:
+    if not proxy_url:
         proxy = find_working_proxy()
         if proxy:
-            settings.telegram_proxy_url = proxy
+            proxy_url = proxy
             logger.info("Автоопределён прокси: %s", proxy)
         else:
             logger.warning("Не удалось найти рабочий локальный прокси. Пробуем прямое подключение.")
 
     # Создаём сессию для Telegram API
-    if settings.telegram_proxy_url:
-        session = ProxyAiohttpSession(proxy=settings.telegram_proxy_url)
-        logger.info("Используем прокси для Telegram API: %s", settings.telegram_proxy_url)
+    if proxy_url:
+        logger.info("Используем прокси для Telegram API: %s", proxy_url)
+        session = ProxyAiohttpSession(proxy=proxy_url)
     else:
         session = AiohttpSession()
 
@@ -140,8 +145,8 @@ async def main() -> None:
         logger.error(
             "Проверьте доступ к api.telegram.org или настройте TELEGRAM_PROXY_URL в .env"
         )
-        if settings.telegram_proxy_url:
-            logger.error("Используемый прокси: %s", settings.telegram_proxy_url)
+        if proxy_url:
+            logger.error("Используемый прокси: %s", proxy_url)
         await bot.session.close()
         return
 
