@@ -1,4 +1,4 @@
-# Резервная копия PostgreSQL (Windows PowerShell). Хранит последние 7 копий.
+﻿# Резервная копия PostgreSQL (Windows PowerShell). Хранит последние 7 копий.
 # Запуск из папки проекта:  powershell -ExecutionPolicy Bypass -File scripts\backup_db.ps1
 $ErrorActionPreference = "Stop"
 Set-Location (Join-Path $PSScriptRoot "..")

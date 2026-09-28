@@ -57,7 +57,12 @@ class Settings:
         self.openrouter_base_url: str = _str("OPENROUTER_BASE_URL", "https://openrouter.ai/api/v1").rstrip("/")
         self.llm_model: str = _str("LLM_MODEL", "anthropic/claude-3.5-sonnet")
         # Прокси для OpenRouter (если нужен). По умолчанию — тот же, что и для Telegram.
-        self.llm_proxy_url: str | None = _str("LLM_PROXY_URL") or self.telegram_proxy_url
+        # LLM_PROXY_URL=none — ходить к LLM напрямую (например, к серверу НГУ), без прокси Telegram
+        _llm_proxy = _str("LLM_PROXY_URL")
+        self.llm_proxy_url: str | None = (
+            None if _llm_proxy.lower() in ("none", "direct", "no", "-", "false", "0")
+            else (_llm_proxy or self.telegram_proxy_url)
+        )
 
         # Источники
         self.demo_source_enabled: bool = _bool("DEMO_SOURCE_ENABLED", True)

@@ -11,3 +11,4 @@ build/
 .aider*
 data/
 backups/
+logs/

@@ -1,4 +1,4 @@
-# Восстановление базы из копии (Windows). Остановите бота перед запуском!
+﻿# Восстановление базы из копии (Windows). Остановите бота перед запуском!
 # Запуск:  powershell -ExecutionPolicy Bypass -File scripts\restore_db.ps1 backups\freelanceradar_....sql
 param([Parameter(Mandatory=$true)][string]$File)
 $ErrorActionPreference = "Stop"

@@ -40,7 +40,20 @@ class LLMVerdict(BaseModel):
     model: Optional[str] = None
 
 
-_JSON_RE = re.compile(r"\{.*\}", re.S)
+_JSON_OBJ_RE = re.compile(r"\{[^{}]*\}", re.S)  # плоский объект {"match":..,"score":..,"reasons":[..]}
+
+
+def parse_verdict(message: dict) -> LLMVerdict:
+    """Достаёт JSON-вердикт из ответа. У «думающих» моделей content бывает пустым,
+    а ответ лежит в reasoning_content / reasoning — ищем и там (последний JSON-объект)."""
+    for field in ("content", "reasoning_content", "reasoning"):
+        text = message.get(field) or ""
+        for chunk in reversed(_JSON_OBJ_RE.findall(text)):
+            try:
+                return LLMVerdict.model_validate_json(chunk)
+            except ValidationError:
+                continue
+    raise ValueError("no JSON verdict in answer")
 
 
 class LLMGateway:
@@ -71,26 +84,31 @@ class LLMGateway:
                 {"role": "user", "content": payload_user},
             ],
             "temperature": 0,
-            "max_tokens": 300,
+            # запас на «думающие» модели (DeepSeek V4, Qwen3): рассуждение тоже тратит токены
+            "max_tokens": 1024,
             "response_format": {"type": "json_object"},
+            # vLLM/SGLang: выключить режим рассуждения — ответ быстрее и укладывается в таймаут
+            "chat_template_kwargs": {"thinking": False, "enable_thinking": False},
         }
         headers = {
             "Authorization": f"Bearer {settings.openrouter_api_key}",
             "X-Title": "FreelanceRadar",
         }
+        url = f"{settings.openrouter_base_url}/chat/completions"
         try:
-            resp = await self._client.post(f"{settings.openrouter_base_url}/chat/completions", json=body, headers=headers)
+            resp = await self._client.post(url, json=body, headers=headers)
+            if resp.status_code in (400, 422):
+                # Не все OpenAI-совместимые серверы понимают доп. параметры — пробуем без них
+                body.pop("response_format", None)
+                body.pop("chat_template_kwargs", None)
+                resp = await self._client.post(url, json=body, headers=headers)
         except httpx.HTTPError as exc:
             raise LLMUnavailable(f"{type(exc).__name__}") from exc
         if resp.status_code != 200:
             raise LLMUnavailable(f"HTTP {resp.status_code}")
         try:
             data = resp.json()
-            content = data["choices"][0]["message"]["content"] or ""
-            m = _JSON_RE.search(content)
-            if not m:
-                raise ValueError("no JSON in answer")
-            verdict = LLMVerdict.model_validate_json(m.group(0))
+            verdict = parse_verdict(data["choices"][0]["message"])
         except (ValueError, KeyError, IndexError, TypeError, ValidationError) as exc:
             raise LLMUnavailable(f"invalid response: {type(exc).__name__}") from exc
         verdict.model = data.get("model", settings.llm_model)

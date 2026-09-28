@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
+from pathlib import Path
 from typing import Any, Awaitable, Callable
 
 from aiogram import BaseMiddleware, Bot, Dispatcher
@@ -27,11 +29,15 @@ from core.config import ConfigError, mask_url, settings
 from db.base import Base
 from db.repository import ensure_source, get_active_keywords
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s | %(levelname)-7s | %(name)s | %(message)s",
-    stream=sys.stdout,
-)
+_LOG_FORMAT = "%(asctime)s | %(levelname)-7s | %(name)s | %(message)s"
+_handlers: list[logging.Handler] = [logging.StreamHandler(sys.stdout)]
+if os.getenv("LOG_FILE"):
+    # LOG_FILE=logs/bot.log — лог ещё и в файл (до 5 файлов по 5 МБ), для работы без присмотра
+    from logging.handlers import RotatingFileHandler
+
+    Path(os.environ["LOG_FILE"]).parent.mkdir(parents=True, exist_ok=True)
+    _handlers.append(RotatingFileHandler(os.environ["LOG_FILE"], maxBytes=5_000_000, backupCount=4, encoding="utf-8"))
+logging.basicConfig(level=logging.INFO, format=_LOG_FORMAT, handlers=_handlers)
 # httpx на INFO пишет полный URL запроса — там может оказаться токен
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logger = logging.getLogger("freelanceradar")
@@ -183,7 +189,7 @@ async def main() -> int:
     # ---- LLM
     llm = LLMGateway()
     logger.info(
-        "ИИ-фильтр: %s", f"OpenRouter, модель {settings.llm_model}" if llm.enabled else "ключ не задан — только правила"
+        "ИИ-фильтр: %s", f"{settings.openrouter_base_url.split('//')[-1].split('/')[0]}, модель {settings.llm_model}" if llm.enabled else "ключ не задан — только правила"
     )
 
     dp = Dispatcher(storage=storage)
