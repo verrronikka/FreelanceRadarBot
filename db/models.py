@@ -5,7 +5,7 @@ import uuid
 from datetime import datetime
 
 from sqlalchemy import (
-    BigInteger, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint,
+    text, BigInteger, Boolean, DateTime, Enum, Float, ForeignKey, Integer, String, Text, UniqueConstraint,
 )
 from sqlalchemy.dialects.postgresql import UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -55,6 +55,10 @@ class User(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     telegram_user_id: Mapped[int] = mapped_column(BigInteger, unique=True, nullable=False)
     status: Mapped[UserStatus] = mapped_column(Enum(UserStatus), default=UserStatus.active, nullable=False)
+    # Пауза уведомлений: сбор данных продолжается, delivery не создаются
+    notifications_paused: Mapped[bool] = mapped_column(
+        Boolean, default=False, server_default=text("false"), nullable=False
+    )
 
     profiles: Mapped[list["Profile"]] = relationship(back_populates="user", cascade="all, delete-orphan")
 
@@ -83,6 +87,10 @@ class Source(TimestampMixin, Base):
     name: Mapped[str] = mapped_column(String(120), nullable=False)
     status: Mapped[SourceStatus] = mapped_column(Enum(SourceStatus), default=SourceStatus.active, nullable=False)
     poll_interval_sec: Mapped[int] = mapped_column(Integer, nullable=False, default=60)
+    # RSS/Atom-лента, добавленная пользователем из бота (NULL — встроенный источник)
+    feed_url: Mapped[str | None] = mapped_column(String(1024), nullable=True)  # уникальность — индекс uq_sources_feed_url
+    added_by: Mapped[int | None] = mapped_column(BigInteger, nullable=True)  # telegram_user_id
+    feed_kind: Mapped[str | None] = mapped_column(String(16), nullable=True)  # rss | page
 
     profiles: Mapped[list["Profile"]] = relationship(secondary="profile_sources", back_populates="sources")
     jobs: Mapped[list["Job"]] = relationship(back_populates="source")
@@ -135,6 +143,9 @@ class MatchDecision(TimestampMixin, Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=new_uuid)
     profile_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("profiles.id", ondelete="CASCADE"), nullable=False)
     job_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("jobs.id", ondelete="CASCADE"), nullable=False)
+
+    job: Mapped["Job"] = relationship()
+    profile: Mapped["Profile"] = relationship()
     verdict: Mapped[Verdict] = mapped_column(Enum(Verdict), nullable=False)
     score: Mapped[float | None] = mapped_column(Float, nullable=True)
     reasons: Mapped[str | None] = mapped_column(Text, nullable=True)  # JSON-список строкой
@@ -152,3 +163,5 @@ class NotificationDelivery(TimestampMixin, Base):
     attempts: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
     error_code: Mapped[str | None] = mapped_column(String(64), nullable=True)
+
+    decision: Mapped["MatchDecision"] = relationship()
