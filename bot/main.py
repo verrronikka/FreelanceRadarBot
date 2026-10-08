@@ -12,6 +12,7 @@ from aiogram import BaseMiddleware, Bot, Dispatcher
 from aiogram.client.default import DefaultBotProperties
 from aiogram.fsm.storage.base import BaseStorage
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.exceptions import TelegramNetworkError
 from aiogram.types import BotCommand, ErrorEvent, TelegramObject
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
@@ -141,7 +142,7 @@ async def main() -> int:
         default=DefaultBotProperties(parse_mode="HTML", link_preview_is_disabled=True),
     )
     try:
-        me = await bot.get_me(request_timeout=15)
+        me = await asyncio.wait_for(bot.me(), timeout=30)  # bot.me() кэширует ответ — polling не будет спрашивать повторно
     except Exception as exc:
         logger.error("Не удалось подключиться к Telegram API: %s", exc)
         if "Unauthorized" in str(exc):
@@ -228,7 +229,15 @@ async def main() -> int:
     logger.info("Бот запущен. Откройте @%s в Telegram и нажмите /start. Остановка — Ctrl+C", me.username)
     try:
         await bot.delete_webhook(drop_pending_updates=False)
-        await dp.start_polling(bot)
+        # Сбой связи с Telegram (например, VPN переподключается) не должен ронять бота:
+        # ждём и запускаем polling снова. Выход — Ctrl+C.
+        while True:
+            try:
+                await dp.start_polling(bot)
+                break
+            except TelegramNetworkError as exc:
+                logger.warning("Нет связи с Telegram (%s) — повтор через 15 с. Проверьте VPN/Happ.", exc)
+                await asyncio.sleep(15)
     finally:
         scheduler_task.cancel()
         try:

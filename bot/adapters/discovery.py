@@ -12,13 +12,13 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Literal
 from urllib.parse import urlsplit
-from urllib.robotparser import RobotFileParser
 
 import httpx
 
 from bot.adapters.base import NormalizedJob, SourceSchemaInvalid
 from bot.adapters.html_page import BROWSER_HEADERS, parse_page
-from bot.adapters.rss import FeedCheckError, USER_AGENT, _ensure_public_host, parse_feed
+from bot.adapters.robots import robots_allows
+from bot.adapters.rss import FeedCheckError, _ensure_public_host, parse_feed
 
 
 @dataclass
@@ -30,16 +30,7 @@ class SourceCheck:
 
 
 async def _robots_allows(client: httpx.AsyncClient, url: str) -> bool:
-    parts = urlsplit(url)
-    try:
-        r = await client.get(f"{parts.scheme}://{parts.netloc}/robots.txt")
-    except httpx.HTTPError:
-        return True
-    if r.status_code != 200:
-        return True
-    rp = RobotFileParser()
-    rp.parse(r.text.splitlines())
-    return rp.can_fetch(USER_AGENT, url)
+    return await robots_allows(client, url)
 
 
 def _looks_like_feed(resp: httpx.Response) -> bool:

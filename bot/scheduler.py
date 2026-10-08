@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Optional
 
+import httpx
 from aiogram import Bot
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -28,6 +29,7 @@ from bot.adapters.base import (
 )
 from bot.adapters.freelancehunt import FreelancehuntAdapter
 from bot.adapters.html_page import HtmlPageAdapter
+from bot.adapters.robots import USER_AGENT as ROBOTS_UA, robots_allows
 from bot.adapters.rss import RssAdapter
 from bot.health import write_heartbeat
 from bot.services.delivery import send_pending
@@ -52,6 +54,7 @@ TICK_SECONDS = 5
 SOURCE_RETRIES = 3
 CLEANUP_EVERY_SECONDS = 3600
 FIRST_POLL_MATCH_LIMIT = 5
+ROBOTS_RECHECK_SECONDS = 6 * 3600
 
 
 @dataclass
@@ -66,6 +69,7 @@ class SourceState:
     errors: int = 0
     jobs_new: int = 0
     matched: int = 0
+    robots_checked_at: float = 0.0
 
     def fail(self, code: str) -> None:
         self.errors += 1
@@ -160,6 +164,26 @@ class Scheduler:
         st = self.state.setdefault(source.code, SourceState())
         interval = max(30, source.poll_interval_sec)
         started = time.monotonic()
+
+        # Источники пользователей (RSS/страницы): перепроверяем robots.txt при старте и раз в 6 ч.
+        # Если площадка запретила чтение — источник на паузу, как при 401/403.
+        if isinstance(adapter, (RssAdapter, HtmlPageAdapter)) and time.time() - st.robots_checked_at > ROBOTS_RECHECK_SECONDS:
+            url = getattr(adapter, "feed_url", None) or getattr(adapter, "page_url", "")
+            async with httpx.AsyncClient(timeout=15, headers={"User-Agent": ROBOTS_UA}, follow_redirects=True) as client:
+                allowed = await robots_allows(client, url)
+            st.robots_checked_at = time.time()
+            if not allowed:
+                st.fail("SOURCE_ROBOTS_DISALLOWED")
+                logger.error(
+                    "SOURCE_ROBOTS_DISALLOWED %s: robots.txt площадки запрещает чтение %s — источник поставлен на паузу",
+                    source.code, url,
+                )
+                async with self.session_maker() as session:
+                    await pause_source(session, source.id)
+                    await session.commit()
+                self.adapters.pop(source.code, None)
+                await adapter.close()
+                return
 
         try:
             result = await self._fetch_with_retry(adapter, st.cursor)

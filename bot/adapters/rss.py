@@ -18,10 +18,10 @@ from datetime import datetime, timezone
 from email.utils import parsedate_to_datetime
 from typing import Optional
 from urllib.parse import urlsplit
-from urllib.robotparser import RobotFileParser
 
 import httpx
 
+from bot.adapters.robots import USER_AGENT, robots_allows
 from bot.adapters.base import (
     BaseAdapter,
     FetchResult,
@@ -35,7 +35,6 @@ from bot.adapters.base import (
     normalize_text,
 )
 
-USER_AGENT = "FreelanceRadarBot/1.0"
 _ATOM = "{http://www.w3.org/2005/Atom}"
 
 # «Бюджет: 15 000 руб», «5000 ₽», «до 20 000 р.» → число
@@ -154,18 +153,11 @@ async def check_feed(url: str) -> ParsedFeed:
         timeout=15, headers={"User-Agent": USER_AGENT}, follow_redirects=True
     ) as client:
         # robots.txt: уважаем запрет площадки на автоматическое чтение
-        try:
-            r = await client.get(f"{parts.scheme}://{parts.netloc}/robots.txt")
-            if r.status_code == 200:
-                rp = RobotFileParser()
-                rp.parse(r.text.splitlines())
-                if not rp.can_fetch(USER_AGENT, url):
-                    raise FeedCheckError(
-                        "Площадка запрещает автоматическое чтение этой ленты (robots.txt). "
-                        "По правилам проекта такой источник подключать нельзя."
-                    )
-        except httpx.HTTPError:
-            pass  # robots.txt недоступен — ограничений не заявлено
+        if not await robots_allows(client, url):
+            raise FeedCheckError(
+                "Площадка запрещает автоматическое чтение этой ленты (robots.txt). "
+                "По правилам проекта такой источник подключать нельзя."
+            )
 
         try:
             resp = await client.get(url)

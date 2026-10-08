@@ -169,3 +169,46 @@ def test_check_source_blocked_site(monkeypatch):
 def test_check_source_rejects_local_and_bad_urls(url):
     with pytest.raises(FeedCheckError):
         asyncio.run(discovery.check_source(url))
+
+
+# --- robots.txt по стандарту RFC 9309 (шаблоны * и $) ---
+
+from bot.adapters.robots import is_allowed  # noqa: E402
+
+FL_ROBOTS = """User-agent: *
+Disallow: /login/
+Disallow: */rss/*
+Allow: /projects/
+
+User-agent: dotbot
+Disallow: /
+"""
+
+
+def test_robots_wildcard_blocks_rss():
+    # urllib.robotparser не понимал «*/rss/*» и пропускал ленту — регрессия
+    assert not is_allowed(FL_ROBOTS, "https://www.fl.ru/rss/all.xml?category=41")
+
+
+def test_robots_allows_other_pages():
+    assert is_allowed(FL_ROBOTS, "https://www.fl.ru/projects/")
+
+
+def test_robots_specific_agent_group():
+    assert not is_allowed(FL_ROBOTS, "https://www.fl.ru/projects/", ua_token="dotbot")
+
+
+def test_robots_longest_rule_wins_and_dollar():
+    assert is_allowed("User-agent: *\nDisallow: /a\nAllow: /a/b", "https://x/a/b/c")
+    assert not is_allowed("User-agent: *\nDisallow: /*.xml$", "https://x/f.xml")
+    assert is_allowed("User-agent: *\nDisallow: /*.xml$", "https://x/f.xml?x=1")
+    assert is_allowed("User-agent: *\nDisallow:", "https://x/y")
+
+
+def test_check_source_respects_wildcard_robots(monkeypatch):
+    _mock_site(monkeypatch, {
+        "/robots.txt": (200, "text/plain", FL_ROBOTS.encode()),
+        "/rss/all.xml": (200, "application/rss+xml", RSS),
+    })
+    with pytest.raises(FeedCheckError, match="robots"):
+        asyncio.run(discovery.check_source("https://s.com/rss/all.xml?category=41"))
